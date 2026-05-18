@@ -21,7 +21,7 @@ const pkgData = fs.existsSync(pkgFile) ? require(pkgFile) : {}
 const pkgId = pkgtoId(pkgData)
 const refcmd = 'git rev-list --max-count=1 {{ref}}'
 const commitdatecmd = '$(git show -s --format=%cd `{{refcmd}}`)'
-const gitcmd = 'git log {{startCommit}}..{{branch}} --until="{{untilcmd}}"'
+const gitcmd = 'git log {{startCommit}}..{{branch}} --until="{{untilcmd}}" {{pathcmd}}'
 const ghId = {
   user: pkgId.user || 'nodejs',
   repo: pkgId.name || 'node'
@@ -42,7 +42,7 @@ export async function branchDiff (branch1, branch2, options) {
   const repoPath = options.repoPath || process.cwd()
   const commit = await findMergeBase(repoPath, branch1, branch2)
   const branchCommits = await Promise.all([branch1, branch2].map(async (branch) => {
-    return collect(repoPath, branch, commit, branch === branch2 && options.endRef)
+    return collect(repoPath, branch, options.path, commit, branch === branch2 && options.endRef)
   }))
   return await diffCollected(options, branchCommits)
 }
@@ -103,10 +103,11 @@ async function diffCollected (options, branchCommits) {
   return list
 }
 
-async function collect (repoPath, branch, startCommit, endRef) {
+async function collect (repoPath, branch, path, startCommit, endRef) {
   const endrefcmd = endRef && replace(refcmd, { ref: endRef })
   const untilcmd = endRef ? replace(commitdatecmd, { refcmd: endrefcmd }) : ''
-  const _gitcmd = replace(gitcmd, { branch, startCommit, untilcmd })
+  const pathcmd = path ? `"${path}"` : ''
+  const _gitcmd = replace(gitcmd, { branch, startCommit, untilcmd, pathcmd })
 
   const commitList = []
   await pipeline(
@@ -123,13 +124,15 @@ async function collect (repoPath, branch, startCommit, endRef) {
 
 async function main () {
   const minimistConfig = {
-    boolean: ['version', 'group', 'patch-only', 'simple', 'filter-release', 'reverse']
+    boolean: ['version', 'group', 'patch-only', 'simple', 'filter-release', 'reverse'],
+    string: ['path']
   }
   const argv = minimist(process.argv.slice(2), minimistConfig)
   const branch1 = argv._[0]
   const branch2 = argv._[1]
   const group = argv.group || argv.g
   const endRef = argv['end-ref']
+  const path = argv['path']
   let excludeLabels = []
   let requireLabels = []
 
@@ -165,6 +168,7 @@ async function main () {
 
   const options = {
     group,
+    path,
     excludeLabels,
     requireLabels,
     endRef
